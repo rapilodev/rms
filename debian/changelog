@@ -1,0 +1,12 @@
+rms (0.01.0013) xenial; urgency=low
+  * force recompile to separate builds
+ -- Milan Chrobok <mc@radiopiloten.de>  Mon, 31 Mar 2017 12:04:09 +0200
+
+rms (0.01.0010) trusty; urgency=low
+  * add pulseRms to monitor pulseaudio
+ -- Milan Chrobok <mc@radiopiloten.de>  Mon, 18 Jul 2016 12:04:09 +0200
+
+rms (0.01.0007) trusty; urgency=low
+  * initial package
+ -- Milan Chrobok <mc@radiopiloten.de>  Sun, 28 Feb 2016 12:04:09 +0200
+

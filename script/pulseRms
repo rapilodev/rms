@@ -1,0 +1,82 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+$|=1;
+
+my $parec=`which parec`;
+chomp $parec;
+die("missing parec, please install pulseaudio utils") unless -e $parec;
+#print STDERR "use $parec\n";
+open my $fh, $parec."|";
+binmode $fh;
+
+my $interval=1;
+my $frequency=44100;
+my $channels=2;
+my $bytesPerSample=2;
+
+my $maxLeft=0;
+my $maxRight=0;
+my $rmsLeft=0;
+my $rmsRight=0;
+
+my $totalSamplesRead=0;
+my $now=time();
+my $start=$now;
+my $lastPrint=$now;
+my $log10Factor=20. /log(10.);
+
+print "#seconds rmsL rmsR maxL maxR\n";
+my $buffer=undef;
+while ( my $bytesRead = read( $fh, $buffer, $frequency ) ) {
+    $totalSamplesRead += $bytesRead / ($bytesPerSample * $channels);
+    my @data = unpack "s*", $buffer;
+    parseData( \@data, $bytesRead / ($bytesPerSample), $channels );
+    $buffer = '';
+
+    $now=time();
+    if ($now >= $lastPrint + $interval){
+        $lastPrint = $now;
+        printData($totalSamplesRead);
+        $maxLeft  = 0.;
+        $maxRight = 0.;
+        $rmsLeft  = 0.;
+        $rmsRight = 0.;
+        $totalSamplesRead= 0;
+    }
+}
+
+
+sub parseData{
+    my $data  = shift;
+    my $samplesRead  = shift;
+    my $channels = shift;
+    
+    for (my $i = 0; $i < $samplesRead; $i += $channels){
+        my $l = $data->[$i  ] / 32768.0;
+        my $r = $data->[$i+1] / 32768.0;
+
+        if ( $l > $maxLeft )  { $maxLeft  = $l; }
+        if ( $r > $maxRight ) { $maxRight = $r; }
+        $rmsLeft  += $l * $l;
+        $rmsRight += $r * $r;
+    }
+}
+
+sub printData{
+    my $totalSamplesRead = shift;
+    $totalSamplesRead= 0.000000001 if $totalSamplesRead==0;
+
+    $rmsLeft  = sqrt( $rmsLeft  / $totalSamplesRead );
+    $rmsRight = sqrt( $rmsRight / $totalSamplesRead );
+
+    my $duration = ($now - $start);
+    printf("%d %.2f %.2f %.2f %.2f\n", $duration, toDb($rmsLeft), toDb($rmsRight), toDb($maxLeft), toDb($maxRight));
+}
+
+sub toDb{
+    my $amplitude=shift;
+    $amplitude=0.000001 if $amplitude==0;
+    return $log10Factor*log($amplitude);
+}
+

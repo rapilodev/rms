@@ -1,0 +1,192 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+
+#use Data::Dumper;
+use File::Basename;
+use Getopt::Long;
+
+my $tempDir    = '/tmp';
+
+my $minRms     = -36;
+my $resolution = 1.5;
+my $template   = undef;
+my $help       = undef;
+my $verbose    = undef;
+my $pngFile    = undef;
+my $audioFile  = undef;
+
+Getopt::Long::GetOptions(
+    "i|input=s"      => \$audioFile,
+    "o|output=s"     => \$pngFile,
+    "r|resolution=s" => \$resolution,
+    "t|template=s"   => \$template,
+    "l|limit=i"      => \$minRms,
+    "h|help"         => \$help,
+    "v|verbose"      => \$verbose
+) or error("Error in command line arguments\n");
+
+if ($help) {
+    usage();
+    exit();
+}
+error("missing parameter --input for audio file") unless defined $audioFile;
+error("audio file '$audioFile' does not exist") unless -e $audioFile;
+error("template file '$template' does not exist") if ( defined $template ) && ( !-e $template );
+error("invalid resolution '$resolution'") if $resolution <= 0;
+
+$pngFile  = dirname($audioFile) . '/' . basename($audioFile) . '.png' unless defined $pngFile;
+my $dataFile   = $tempDir . '/' . basename($audioFile) . '-plot.data';
+my $rmsFile    = $tempDir . '/' . basename($audioFile) . '-plot.rms';
+my $plotFile   = $tempDir . '/' . basename($audioFile) . '.plot';
+
+# use the positive value internally
+$minRms *= -1 if $minRms < 0;
+
+getData( $audioFile, $rmsFile );
+buildDataFile( $rmsFile, $dataFile );
+plot( $dataFile, $plotFile );
+
+sub getData {
+    my $audioFile = shift;
+    my $rmsFile   = shift;
+
+    unlink $rmsFile if -e $rmsFile;
+    my $verboseParam = '';
+    $verboseParam = " -v" if defined $verbose;
+
+    my $command = "nice rms -r '$resolution' -i '$audioFile' -o '$rmsFile' $verboseParam";
+    print STDERR "execute $command\n";
+    print STDERR `$command 2>&1`;
+    my $exitCode = $? >> 8;
+    error("rms died with error $exitCode: $!") if $exitCode != 0;
+}
+
+sub buildDataFile {
+    my $rmsFile  = shift;
+    my $dataFile = shift;
+
+    unlink $dataFile if -e $dataFile;
+
+    open my $file, "<", $rmsFile;
+    open my $out,  ">", $dataFile;
+
+    while (<$file>) {
+        my $line = $_;
+        my @vals = split( /\s+/, $line );
+        if ( $line =~ /^#/ ) {
+            print $out $line;
+            next;
+        }
+        next unless @vals == 5;
+        for my $i ( 1 .. scalar(@vals) - 1 ) {
+            my $val = $vals[$i];
+
+            # silence detection
+            if ( $val < -200 ) {
+                $vals[$i] = '-';
+                next;
+            }
+
+            # cut off signal lower than minRMS
+            $val = -$minRms if $val < -$minRms;
+
+            # get absolute value
+            $val = abs($val);
+
+            # inverse value for plot (60db-val= plotVal)
+            $val = $minRms - $val;
+            $vals[$i] = $val;
+        }
+        print $out join( " ", @vals ) . "\n";
+    }
+    close $file;
+    close $out;
+}
+
+sub plot {
+    my $dataFile = shift;
+    my $plotFile = shift;
+
+    unlink $plotFile if -e $plotFile;
+    unlink $pngFile  if -e $pngFile;
+
+    unless ( defined $template ) {
+        my @ytics = ();
+        for ( my $i = -$minRms ; $i <= $minRms ; $i += 6 ) {
+            push @ytics, '"-' . ( $minRms - abs($i) ) . ' dB" ' . ($i);
+        }
+        my $ytics = join( ", ", @ytics );
+
+        my $plot = qq{
+            set terminal png background rgb 'black' truecolor nocrop enhanced size 900,300 font "Droid Sans,8" 
+            set output "$pngFile";
+
+            set border lc rgb '#f0f0f0f0'
+            set style fill transparent solid 0.3
+            set style data lines
+            #set style function filledcurves y1=0
+            set nokey
+            set grid
+            set ytics ($ytics)
+            set yrange [-$minRms:$minRms]
+
+            set xdata time
+            set timefmt "%s"
+            set format x "%H:%M:%S"
+
+            plot \\
+            '$dataFile' using 1:( (\$4)) lc rgb "#50ee9999" w filledcurves y1=0 title "maxL",\\
+            '$dataFile' using 1:(-(\$5)) lc rgb "#5099ee99" w filledcurves y1=0 title "maxR",\\
+            '$dataFile' using 1:( (\$2)) lc rgb "#50ff0000" w filledcurves y1=0 title "rmsL",\\
+            '$dataFile' using 1:(-(\$3)) lc rgb "#5000ff00" w filledcurves y1=0 title "rmsR"\\
+            ;
+        };
+
+        open my $file, ">", $plotFile || die("cannot write plot file $plotFile");
+        print $file $plot;
+        close $file;
+    }
+
+    my $command = "gnuplot '$plotFile'";
+    $command = "gnuplot '$template'" if defined $template;
+
+    print STDERR "execute $command\n";
+    print STDERR `$command 2>&1`;
+    my $exitCode = $? >> 8;
+    print STDERR "rmsPlot='$pngFile'\n";
+    error("plot command died with error $exitCode: $!") if $exitCode != 0;
+}
+
+sub usage {
+    print STDERR q{
+plot RMS values from audio file
+
+DESCRIPTION:
+plotRms will parse audio input and calculate RMS values for a given duration.
+The results are plotted to an PNG image.
+
+Usage: rms [OPTION...] audioFile
+
+OPTIONS:
+    -i --input  audio       path of any audio or video file to be plotted
+    -o --output image       path of target PNG file, if ommited use audioFile.png
+    -r --resolution VALUE   RMS resolution for each line of output in seconds, default is 1.5
+    -l --limit              cut off RMS values lower than limit in dB, default is -36
+    -t --template FILE      use given gnuplot template file instead of build-in template
+    -v --verbose            verbose output
+    -h --help               this help
+}
+}
+
+sub error {
+    print "ERROR: " . $_[0] . "\n";
+    exit 1;
+}
+
+END {
+    unlink $dataFile if ( defined $dataFile ) && ( -e $dataFile );
+    unlink $rmsFile  if ( defined $rmsFile )  && ( -e $rmsFile );
+    unlink $plotFile if ( defined $plotFile ) && ( -e $plotFile );
+}
+
