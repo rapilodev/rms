@@ -97,6 +97,19 @@ ofstream outputFile;
 AVPacket packet;
 AVFrame frame;
 
+void avcodec_get_frame_defaults(AVFrame *frame)
+{
+#if LIBAVCODEC_VERSION_MAJOR >= 55
+     // extended_data should explicitly be freed when needed, this code is unsafe currently
+     // also this is not compatible to the <55 ABI/API
+    if (frame->extended_data != frame->data && 0)
+        av_freep(&frame->extended_data);
+#endif
+
+    memset(frame, 0, sizeof(AVFrame));
+    av_frame_unref(frame);
+}
+
 // read data from data[0] and data[1]
 void inline decodePlanarFrame(Sample *total, Sample *step, AVFrame *frame,
 		AVCodecContext *codecContext, int channels, ssize_t size) {
@@ -404,7 +417,7 @@ void readAudioRms(const char* filename) {
 	unsigned long samplesReadPerSecond = 0;
 	while (av_read_frame(formatContext, &packet) == 0) {
 		if (packet.stream_index != audioStreamId) {
-			av_free_packet(&packet);
+			av_packet_unref(&packet);
 			continue;
 		}
 
@@ -414,11 +427,11 @@ void readAudioRms(const char* filename) {
 		if (avcodec_decode_audio4(codecContext, &frame, &frameFinished, &packet)
 				< 0) {
 			cerr << "warn: cannot decode audio packet\n";
-			av_free_packet(&packet);
+			av_packet_unref(&packet);
 			continue;
 		}
 		if (frameFinished == 0) {
-			av_free_packet(&packet);
+			av_packet_unref(&packet);
 			continue;
 		}
 
@@ -431,7 +444,7 @@ void readAudioRms(const char* filename) {
 
 		ssize_t size = bufferSize / (sampleSize * channels);
 		if (size == 0) {
-			av_free_packet(&packet);
+			av_packet_unref(&packet);
 			continue;
 		}
 
@@ -456,7 +469,7 @@ void readAudioRms(const char* filename) {
 			steps++;
 		}
 
-		av_free_packet(&packet);
+		av_packet_unref(&packet);
 	}
 
 	// add line for last value
@@ -490,7 +503,7 @@ void readAudioRms(const char* filename) {
 	if (codecContext)
 		avcodec_close(codecContext);
 	avformat_close_input(&formatContext);
-	if (outputFile != NULL)
+	if (outputFile.is_open() )
 		outputFile.close();
 
 }

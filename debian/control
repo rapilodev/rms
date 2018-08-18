@@ -12,5 +12,5 @@ Architecture: any
 Depends: ${misc:Depends}, ${perl:Depends},
  libgetopt-long-descriptive-perl,
  gnuplot-nox,
- libav-tools
+ ffmpeg
 Description: detect and plot audio RMS
