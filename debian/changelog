@@ -1,3 +1,7 @@
+rms (0.01.0014) xenial; urgency=low
+  * fix use of deprecated ffmpeg functions 
+ -- Milan Chrobok <mc@radiopiloten.de>  Sun, 19 Aug 2018 12:04:09 +0200
+
 rms (0.01.0013) xenial; urgency=low
   * force recompile to separate builds
  -- Milan Chrobok <mc@radiopiloten.de>  Mon, 31 Mar 2017 12:04:09 +0200

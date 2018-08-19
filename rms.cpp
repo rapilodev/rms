@@ -1,9 +1,4 @@
-//#include <stdio.h>
 #include <unistd.h>
-//#include <stdint.h>
-//#include <string.h>
-//#include <stdlib.h>
-//#include <math.h>
 #include <ctype.h>
 #include <iostream>
 #include <fstream>
@@ -18,7 +13,11 @@ extern "C" {
 }
 #endif
 
-class Sample {
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(55,28,1)
+#define av_frame_alloc  avcodec_alloc_frame
+#endif
+
+class Stats {
 public:
 	double rmsLeft;
 	double rmsRight;
@@ -26,7 +25,7 @@ public:
 	double maxRight;
 	double samplesRead;
 
-	Sample() {
+	Stats() {
 		reset();
 	}
 
@@ -94,20 +93,8 @@ bool verbose = false;
 char* outputFileName = NULL;
 ofstream outputFile;
 
-void avcodec_get_frame_defaults(AVFrame *frame){
-#if LIBAVCODEC_VERSION_MAJOR >= 55
-     // extended_data should explicitly be freed when needed, this code is unsafe currently
-     // also this is not compatible to the <55 ABI/API
-    if (frame->extended_data != frame->data && 0)
-        av_freep(&frame->extended_data);
-#endif
-
-    memset(frame, 0, sizeof(AVFrame));
-    av_frame_unref(frame);
-}
-
 // read data from data[0] and data[1]
-void inline decodePlanarFrame(Sample *total, Sample *step, AVFrame *frame,
+void inline decodePlanarFrame(Stats *total, Stats *step, AVFrame *frame,
 		AVCodecContext *codecContext, int channels, ssize_t size) {
 
 	if ((codecContext->sample_fmt == AV_SAMPLE_FMT_U8)
@@ -216,7 +203,7 @@ void inline decodePlanarFrame(Sample *total, Sample *step, AVFrame *frame,
 }
 
 // read data from data[0] left/right interleaved
-void inline decodeNonPlanarFrame(Sample *total, Sample *step, AVFrame *frame,
+void inline decodeNonPlanarFrame(Stats *total, Stats *step, AVFrame *frame,
 		AVCodecContext *codecContext, int channels, ssize_t size) {
 
 	if ((codecContext->sample_fmt == AV_SAMPLE_FMT_U8)
@@ -319,7 +306,7 @@ void inline decodeNonPlanarFrame(Sample *total, Sample *step, AVFrame *frame,
 	}
 }
 
-void printLine(Sample *step, double seconds) {
+void printLine(Stats *step, double seconds) {
 	if (outputFileName != NULL) {
 		outputFile << fixed << seconds << " " << toDb(step->getRmsLeft()) << " "
 				<< toDb(step->getRmsRight()) << " " << toDb(step->maxLeft)
@@ -334,9 +321,8 @@ void printLine(Sample *step, double seconds) {
 void readAudioRms(const char* filename) {
 	av_register_all();
 
-	// overall RMS
-	Sample* step = new Sample();
-	Sample* total = new Sample();
+	Stats* step = new Stats();
+	Stats* total = new Stats();
 
 	if (outputFileName != NULL) {
 		outputFile.open(outputFileName);
@@ -345,7 +331,7 @@ void readAudioRms(const char* filename) {
 		cout.precision(2);
 	}
 
-	// --- open the file and autodetect the format
+	// open the audio file and auto-detect the format
 	AVFormatContext *formatContext = NULL;
 	if (avformat_open_input(&formatContext, filename, NULL, NULL) < 0) {
 		cerr << "cannot open input file '" << filename << "'\n";
@@ -355,15 +341,18 @@ void readAudioRms(const char* filename) {
 	if (avformat_find_stream_info(formatContext, NULL) < 0)
 		error("cannot find stream information");
 
-    AVCodec *codec = NULL;
+	AVCodec *codec = NULL;
 
 	// get stream id
-	int audioStreamId = av_find_best_stream(formatContext, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
-	if (audioStreamId < 0) error("cannot find an audio stream in the input file");
+	int audioStreamId = av_find_best_stream(formatContext, AVMEDIA_TYPE_AUDIO,
+			-1, -1, &codec, 0);
+	if (audioStreamId < 0)
+		error("cannot find an audio stream in the input file");
 
+	// get stream codec
 	AVCodecContext *codecContext = avcodec_alloc_context3(codec);
-    avcodec_parameters_to_context( codecContext, formatContext->streams[audioStreamId]->codecpar );
-
+	avcodec_parameters_to_context(codecContext,
+			formatContext->streams[audioStreamId]->codecpar);
 	if (avcodec_open2(codecContext, codec, NULL) < 0)
 		error("cannot open audio decoder");
 
@@ -377,10 +366,8 @@ void readAudioRms(const char* filename) {
 	if (sampleRate < 1)
 		error("invalid sample rate");
 
-
 	enum AVSampleFormat sampleFormat = codecContext->sample_fmt;
 	bool isPlanar = av_sample_fmt_is_planar(sampleFormat);
-
 	int sampleSize = av_get_bytes_per_sample(sampleFormat);
 
 	if (verbose) {
@@ -395,7 +382,7 @@ void readAudioRms(const char* filename) {
 	if (sampleSize < 1)
 		error("invalid sample size");
 
-	// write header
+	// write stats header
 	if (outputFileName != NULL) {
 		outputFile << "#seconds rmsL rmsR maxL maxR\n";
 	} else {
@@ -405,85 +392,84 @@ void readAudioRms(const char* filename) {
 	double seconds = 0;
 	int steps = 0;
 	unsigned long samplesReadPerSecond = 0;
-	
-	AVPacket packet;
-	while (av_read_frame(formatContext, &packet) == 0) {
-	
-		if (packet.stream_index != audioStreamId) {
-    		av_packet_unref(&packet);
+
+	AVFrame *frame = av_frame_alloc();
+	AVPacket *packet = av_packet_alloc();
+
+	while (av_read_frame(formatContext, packet) == 0) {
+
+		if (packet->stream_index != audioStreamId) {
+			av_packet_unref(packet);
 			continue;
 		}
 
-    	AVFrame  frame; 
-		avcodec_get_frame_defaults(&frame);
+		int ret = avcodec_send_packet(codecContext, packet);
+		av_packet_unref(packet);
 
-		int ret = avcodec_send_packet(codecContext, &packet);
-    		av_packet_unref(&packet);
-		
-        if (ret < 0) {
-            cout << "Error submitting the packet to the decoder\n";
-            exit(1);
-        }
-        
-        while (ret >= 0) {
-            ret = avcodec_receive_frame(codecContext, &frame);
+		if (ret < 0) {
+			cout << "Error submitting the packet to the decoder\n";
+			exit(1);
+		}
 
-            if (ret == AVERROR(EAGAIN)){
-                // did not receive an answer yet
-                break;
-            }else if ( ret == AVERROR_EOF){
-                cout << "EOF\n";
-                break;
-            }else if (ret < 0) {
-                cout << "Error during decoding\n";
-                exit(1);
-            }
-            int data_size = av_get_bytes_per_sample(codecContext->sample_fmt);
-            if (data_size < 0) {
-                cout << "Failed to calculate data size\n";
-                exit(1);
-            }
+		while (ret >= 0) {
+			ret = avcodec_receive_frame(codecContext, frame);
 
-		    int bufferSize = av_samples_get_buffer_size(NULL,
-				    codecContext->channels, frame.nb_samples,
-				    codecContext->sample_fmt, 1);
-		    if (bufferSize < 0) {
-			    cerr << "warn: invalid buffer size\n";
-		    }
+			if (ret == AVERROR(EAGAIN)) {
+				// did not receive an answer yet
+				break;
+			} else if (ret == AVERROR_EOF) {
+				cout << "EOF\n";
+				break;
+			} else if (ret < 0) {
+				cout << "Error during decoding\n";
+				exit(1);
+			}
+			int data_size = av_get_bytes_per_sample(codecContext->sample_fmt);
+			if (data_size < 0) {
+				cout << "Failed to calculate data size\n";
+				exit(1);
+			}
 
-		    ssize_t size = bufferSize / (sampleSize * channels);
+			int bufferSize = av_samples_get_buffer_size(NULL,
+					codecContext->channels, frame->nb_samples,
+					codecContext->sample_fmt, 1);
+			if (bufferSize < 0) {
+				cerr << "warn: invalid buffer size\n";
+			}
 
-		    if (size == 0) continue;
-		    
+			ssize_t size = bufferSize / (sampleSize * channels);
 
-		    if (isPlanar == true) {
-			    //like mp3
-			    decodePlanarFrame(total, step, &frame, codecContext, channels,
-					    size);
-		    } else {
-			    //like wav
-			    decodeNonPlanarFrame(total, step, &frame, codecContext, channels,
-					    size);
-		    }
-            
-		    if (step->samplesRead > resolution * sampleRate) {
-			    // print initial line
-			    if (steps == 0)
-				    printLine(step, steps);
+			if (size == 0)
+				continue;
 
-			    seconds += step->samplesRead / sampleRate;
-			    printLine(step, seconds);
-			    step->reset();
-			    steps++;
-		    }
+			if (isPlanar == true) {
+				//like mp3
+				decodePlanarFrame(total, step, frame, codecContext, channels,
+						size);
+			} else {
+				//like wav
+				decodeNonPlanarFrame(total, step, frame, codecContext, channels,
+						size);
+			}
 
-        }
+			if (step->samplesRead > resolution * sampleRate) {
+				// print initial line
+				if (steps == 0)
+					printLine(step, steps);
+
+				seconds += step->samplesRead / sampleRate;
+				printLine(step, seconds);
+				step->reset();
+				steps++;
+			}
+
+		}
 	}
 
-    avcodec_free_context(&codecContext);
-    //av_frame_free(&frame);
-    //av_packet_free(&packet);
-    
+	avcodec_free_context(&codecContext);
+	av_frame_free(&frame);
+	av_packet_free(&packet);
+
 	// add line for last value
 
 	seconds += step->samplesRead / sampleRate;
@@ -514,13 +500,14 @@ void readAudioRms(const char* filename) {
 
 	if (codecContext)
 		avcodec_close(codecContext);
-	avformat_close_input(&formatContext);
-	if (outputFile.is_open() )
-		outputFile.close();
-		
-    delete step;
-    delete total;
 
+	avformat_close_input(&formatContext);
+
+	if (outputFile.is_open())
+		outputFile.close();
+
+	delete step;
+	delete total;
 }
 
 void usage() {
