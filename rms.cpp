@@ -21,8 +21,8 @@ class Stats {
 public:
 	double rmsLeft;
 	double rmsRight;
-	double maxLeft;
-	double maxRight;
+	double peakLeft;
+	double peakRight;
 	double samplesRead;
 
 	Stats() {
@@ -32,18 +32,18 @@ public:
 	void reset() {
 		rmsLeft = 0;
 		rmsRight = 0;
-		maxLeft = 0;
-		maxRight = 0;
+		peakLeft = 0;
+		peakRight = 0;
 		samplesRead = 0;
 	}
 
 	void add(double l, double r) {
 		rmsLeft += l * l;
 		rmsRight += r * r;
-		if (fabs(l) > maxLeft)
-			maxLeft = fabs(l);
-		if (fabs(r) > maxRight)
-			maxRight = fabs(r);
+		if (fabs(l) > peakLeft)
+			peakLeft = fabs(l);
+		if (fabs(r) > peakRight)
+			peakRight = fabs(r);
 		samplesRead++;
 	}
 
@@ -57,6 +57,13 @@ public:
 		if (samplesRead == 0.0)
 			samplesRead = 0.0000000001;
 		return sqrt(rmsRight / samplesRead);
+	}
+
+	double getPeakLeft(){
+		return peakLeft;
+	}
+	double getPeakRight(){
+		return peakRight;
 	}
 };
 
@@ -309,12 +316,12 @@ void inline decodeNonPlanarFrame(Stats *total, Stats *step, AVFrame *frame,
 void printLine(Stats *step, double seconds) {
 	if (outputFileName != NULL) {
 		outputFile << fixed << seconds << " " << toDb(step->getRmsLeft()) << " "
-				<< toDb(step->getRmsRight()) << " " << toDb(step->maxLeft)
-				<< " " << toDb(step->maxRight) << "\n";
+				<< toDb(step->getRmsRight()) << " " << toDb(step->peakLeft)
+				<< " " << toDb(step->peakRight) << "\n";
 	} else {
 		cout << fixed << seconds << " " << toDb(step->getRmsLeft()) << " "
-				<< toDb(step->getRmsRight()) << " " << toDb(step->maxLeft)
-				<< " " << toDb(step->maxRight) << "\n";
+				<< toDb(step->getRmsRight()) << " " << toDb(step->peakLeft)
+				<< " " << toDb(step->peakRight) << "\n";
 	}
 }
 
@@ -384,9 +391,9 @@ void readAudioRms(const char* filename) {
 
 	// write stats header
 	if (outputFileName != NULL) {
-		outputFile << "#seconds rmsL rmsR maxL maxR\n";
+		outputFile << "#seconds rmsL rmsR peakL peakR\n";
 	} else {
-		cout << "#seconds rmsL rmsR maxL maxR\n";
+		cout << "#seconds rmsL rmsR peakL peakR\n";
 	}
 
 	double seconds = 0;
@@ -497,6 +504,8 @@ void readAudioRms(const char* filename) {
 	cout << "duration=" << time << "\n";
 	cout << "rmsLeft=" << toDb(total->getRmsLeft()) << "\n";
 	cout << "rmsRight=" << toDb(total->getRmsRight()) << "\n";
+	cout << "peakLeft=" << toDb(total->getPeakLeft()) << "\n";
+	cout << "peakRight=" << toDb(total->getPeakRight()) << "\n";
 
 	if (codecContext)
 		avcodec_close(codecContext);
