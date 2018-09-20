@@ -1,12 +1,8 @@
-#DESTDIR=/
-
 CFLAGS:=$(shell dpkg-buildflags --get CPPFLAGS)
 LDFLAGS:=$(shell dpkg-buildflags --get LDFLAGS)
-#LIBFLAGS:=$(shell pkg-config --cflags --libs libavformat libavcodec libavutil)
 
 all:
-	g++ -O2 $(CFLAGS) $(LDFLAGS) -o rms rms.cpp -lavformat -lavcodec -lavutil
-#	g++ $(CFLAGS) $(LDFLAGS) -o rms rms.cpp $(LIBFLAGS)
+	g++ $(CFLAGS) $(LDFLAGS) -o rms rms.cpp -lavformat -lavcodec -lavutil
 
 install:
 	mkdir -p $(DESTDIR)/bin
@@ -17,7 +13,3 @@ install:
 
 clean:
 	rm -f rms
-
-#	g++ -O -o rms rms.cpp `pkg-config --cflags --libs libavformat libavcodec libavutil`;
-
-

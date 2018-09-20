@@ -1,4 +1,22 @@
-rms (0.01.0014) xenial; urgency=low
+rms (0.01.0020) bionic; urgency=low
+  * rename maxL and maxR to peakL and peakR in output of pulseRms and rms
+ -- Milan Chrobok <mc@radiopiloten.de>  Thu, 20 Sep 2018 23:04:09 +0200
+
+rms (0.01.0019) bionic; urgency=low
+  * support SVG for plotRms
+  * set border and tics colors in plotRms to support gnuplot>4.6
+  * rename maxL and maxR to peakL and peakR in output of pulseRms and rms
+ -- Milan Chrobok <mc@radiopiloten.de>  Thu, 20 Sep 2018 22:04:09 +0200
+
+rms (0.01.0017) bionic; urgency=low
+  * remove libav-tools-dev
+ -- Milan Chrobok <mc@radiopiloten.de>  Wed, 22 Aug 2018 08:04:09 +0200
+
+rms (0.01.0016) bionic; urgency=low
+  * test to build with 18.04
+ -- Milan Chrobok <mc@radiopiloten.de>  Sun, 19 Aug 2018 12:04:09 +0200
+
+rms (0.01.0015) bionic; urgency=low
   * fix use of deprecated ffmpeg functions 
  -- Milan Chrobok <mc@radiopiloten.de>  Sun, 19 Aug 2018 12:04:09 +0200
 
