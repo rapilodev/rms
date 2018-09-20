@@ -3,7 +3,7 @@ Section: sound
 Priority: optional
 Maintainer: Milan Chrobok <mc@radiopiloten.de>
 Build-Depends: debhelper (>= 8),
- perl, libmodule-install-perl, libavutil-dev, libavcodec-dev, libavformat-dev
+ perl, libmodule-install-perl, libavcodec-dev, libavformat-dev
 Standards-Version: 3.9.3
 Homepage: https://launchpad.net/~mc-1/+archive/audioTools
 
