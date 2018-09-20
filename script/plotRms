@@ -5,19 +5,19 @@ use strict;
 use File::Basename;
 use Getopt::Long;
 
-my $tempDir    = '/tmp';
+my $tempDir = '/tmp';
 
 my $minRms     = -36;
 my $resolution = 1.5;
 my $template   = undef;
 my $help       = undef;
 my $verbose    = undef;
-my $pngFile    = undef;
+my $imageFile  = undef;
 my $audioFile  = undef;
 
 Getopt::Long::GetOptions(
     "i|input=s"      => \$audioFile,
-    "o|output=s"     => \$pngFile,
+    "o|output=s"     => \$imageFile,
     "r|resolution=s" => \$resolution,
     "t|template=s"   => \$template,
     "l|limit=i"      => \$minRms,
@@ -30,14 +30,14 @@ if ($help) {
     exit();
 }
 error("missing parameter --input for audio file") unless defined $audioFile;
-error("audio file '$audioFile' does not exist") unless -e $audioFile;
+error("audio file '$audioFile' does not exist")   unless -e $audioFile;
 error("template file '$template' does not exist") if ( defined $template ) && ( !-e $template );
 error("invalid resolution '$resolution'") if $resolution <= 0;
 
-$pngFile  = dirname($audioFile) . '/' . basename($audioFile) . '.png' unless defined $pngFile;
-my $dataFile   = $tempDir . '/' . basename($audioFile) . '-plot.data';
-my $rmsFile    = $tempDir . '/' . basename($audioFile) . '-plot.rms';
-my $plotFile   = $tempDir . '/' . basename($audioFile) . '.plot';
+$imageFile = dirname($audioFile) . '/' . basename($audioFile) . '.png' unless defined $imageFile;
+my $dataFile = $tempDir . '/' . basename($audioFile) . '-plot.data';
+my $rmsFile  = $tempDir . '/' . basename($audioFile) . '-plot.rms';
+my $plotFile = $tempDir . '/' . basename($audioFile) . '.plot';
 
 # use the positive value internally
 $minRms *= -1 if $minRms < 0;
@@ -107,8 +107,8 @@ sub plot {
     my $dataFile = shift;
     my $plotFile = shift;
 
-    unlink $plotFile if -e $plotFile;
-    unlink $pngFile  if -e $pngFile;
+    unlink $plotFile  if -e $plotFile;
+    unlink $imageFile if -e $imageFile;
 
     unless ( defined $template ) {
         my @ytics = ();
@@ -117,14 +117,25 @@ sub plot {
         }
         my $ytics = join( ", ", @ytics );
 
-        my $plot = qq{
-            set terminal png background rgb 'black' truecolor nocrop enhanced size 900,300 font "Droid Sans,8" 
-            set output "$pngFile";
+        my $terminals = {
+            'svg' => q{set terminal svg size 900,300 background rgb 'black'},
+            'png' => q{set terminal png background rgb 'black' truecolor nocrop enhanced size 900,300 font "Droid Sans,8"}
+        };
 
-            set border lc rgb '#f0f0f0f0'
+        my $terminal = $terminals->{png};
+        $terminal = $terminals->{svg} if $imageFile =~ /\.svg$/;
+
+        my $plot = qq{
+            $terminal 
+            set output "$imageFile";
+
+            set border lc rgb '#f0f0f0'
+            set xtics textcolor rgb '#f0f0f0'
+            set ytics textcolor rgb '#f0f0f0'
+
             set style fill transparent solid 0.3
             set style data lines
-            #set style function filledcurves y1=0
+
             set nokey
             set grid
             set ytics ($ytics)
@@ -153,29 +164,39 @@ sub plot {
     print STDERR "execute $command\n";
     print STDERR `$command 2>&1`;
     my $exitCode = $? >> 8;
-    print STDERR "rmsPlot='$pngFile'\n";
+    print STDERR "rmsPlot='$imageFile'\n";
     error("plot command died with error $exitCode: $!") if $exitCode != 0;
 }
 
 sub usage {
     print STDERR q{
-plot RMS values from audio file
+plot stereo audio peak and RMS. 
 
 DESCRIPTION:
-plotRms will parse audio input and calculate RMS values for a given duration.
-The results are plotted to an PNG image.
+plotRms will parse audio input file and plot its peak and RMS values.
+The left channel will be shown top, the right channel bottom. 
+SVG is scalable but larger, on putting many small plots on a page PNG is faster.
+The measure window can be set by --resolution <window> [seconds].
 
 Usage: rms [OPTION...] audioFile
 
 OPTIONS:
     -i --input  audio       path of any audio or video file to be plotted
-    -o --output image       path of target PNG file, if ommited use audioFile.png
-    -r --resolution VALUE   RMS resolution for each line of output in seconds, default is 1.5
-    -l --limit              cut off RMS values lower than limit in dB, default is -36
+    -o --output image       path of target PNG or SVG file, if ommited use audioFile.png
+    -r --resolution VALUE   RMS window in seconds, default is 1.5
+    -l --limit              cut off values lower than limit in dB, default is -36
     -t --template FILE      use given gnuplot template file instead of build-in template
     -v --verbose            verbose output
     -h --help               this help
-}
+
+Examples: 
+# plot png file from wav
+plotRms -i audio.wav -o audio.png
+
+# plot svg file from mp3
+plotRms -i audio.mp3 -o audio.svg
+
+};
 }
 
 sub error {
@@ -188,4 +209,3 @@ END {
     unlink $rmsFile  if ( defined $rmsFile )  && ( -e $rmsFile );
     unlink $plotFile if ( defined $plotFile ) && ( -e $plotFile );
 }
-
