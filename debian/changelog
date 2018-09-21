@@ -1,3 +1,7 @@
+rms (0.01.0023) xenial; urgency=low
+  * update for xenial
+ -- Milan Chrobok <mc@radiopiloten.de>  Thu, 21 Sep 2018 23:04:09 +0200
+
 rms (0.01.0013) xenial; urgency=low
   * force recompile to separate builds
  -- Milan Chrobok <mc@radiopiloten.de>  Mon, 31 Mar 2017 12:04:09 +0200
