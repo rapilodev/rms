@@ -1,3 +1,7 @@
+rms (0.01.0024~hirsute) hirsute; urgency=low
+  * build for hirsute
+ -- Milan Chrobok <mc@radiopiloten.de>  Thu, 22 Aug 2021 20:04:09 +0200
+
 rms (0.01.0024) focal; urgency=low
   * build for bionic
  -- Milan Chrobok <mc@radiopiloten.de>  Thu, 16 Aug 2020 20:04:09 +0200
