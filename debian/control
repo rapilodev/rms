@@ -9,8 +9,9 @@ Homepage: https://launchpad.net/~mc-1/+archive/audioTools
 
 Package: rms
 Architecture: any
-Depends: ${misc:Depends}, ${perl:Depends},
+Depends: ${misc:Depends}, ${perl:Depends}, ${shlibs:Depends},
  libgetopt-long-descriptive-perl,
  gnuplot-nox,
  ffmpeg
-Description: detect and plot audio RMS
+Description: detect \
+ and plot audio RMS
