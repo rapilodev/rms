@@ -4,9 +4,11 @@ use strict;
 
 use File::Basename;
 use Getopt::Long;
+use IPC::Open3;
+use IO::Select;
+use Symbol 'gensym';
 
 my $tempDir = '/tmp';
-
 my $minRms     = -36;
 my $resolution = 1.5;
 my $template   = undef;
@@ -15,55 +17,48 @@ my $verbose    = undef;
 my $imageFile  = undef;
 my $audioFile  = undef;
 
-Getopt::Long::GetOptions(
-    "i|input=s"      => \$audioFile,
-    "o|output=s"     => \$imageFile,
-    "r|resolution=s" => \$resolution,
-    "t|template=s"   => \$template,
-    "l|limit=i"      => \$minRms,
-    "h|help"         => \$help,
-    "v|verbose"      => \$verbose
-) or error("Error in command line arguments\n");
-
-if ($help) {
-    usage();
-    exit();
+sub error {
+    print "ERROR: " . $_[0] . "\n";
+    exit 1;
 }
-error("missing parameter --input for audio file") unless defined $audioFile;
-error("audio file '$audioFile' does not exist")   unless -e $audioFile;
-error("template file '$template' does not exist") if ( defined $template ) && ( !-e $template );
-error("invalid resolution '$resolution'") if $resolution <= 0;
 
-$imageFile = dirname($audioFile) . '/' . basename($audioFile) . '.png' unless defined $imageFile;
-my $dataFile = $tempDir . '/' . basename($audioFile) . '-plot.data';
-my $rmsFile  = $tempDir . '/' . basename($audioFile) . '-plot.rms';
-my $plotFile = $tempDir . '/' . basename($audioFile) . '.plot';
-
-# use the positive value internally
-$minRms *= -1 if $minRms < 0;
-
-getData( $audioFile, $rmsFile );
-buildDataFile( $rmsFile, $dataFile );
-plot( $dataFile, $plotFile );
+sub execute {
+    my (@cmd) = @_;
+    my $pid = open3(undef, my $out, my $err = gensym, @cmd);
+    my $s = IO::Select->new();
+    $s->add($out);
+    $s->add($err);
+    while( my @ready = $s->can_read ) {
+        for my $fh (@ready) {
+            print ((<$fh> // ''));
+            $s->remove($fh) if eof($fh);
+        }
+    }
+    close $err or die $!;
+    close $out or die $!;
+    waitpid $pid, 0;
+    my $exitCode = $? >> 8;
+    if ($exitCode != 0){
+        error qq{"@cmd" returned with exit code $exitCode};
+    }
+    return $exitCode;
+}
 
 sub getData {
-    my $audioFile = shift;
-    my $rmsFile   = shift;
+    my ($audioFile, $rmsFile) = @_;
 
     unlink $rmsFile if -e $rmsFile;
-    my $verboseParam = '';
-    $verboseParam = " -v" if defined $verbose;
-
-    my $command = "nice rms -r '$resolution' -i '$audioFile' -o '$rmsFile' $verboseParam";
-    print STDERR "execute $command\n";
-    print STDERR `$command 2>&1`;
-    my $exitCode = $? >> 8;
-    error("rms died with error $exitCode: $!") if $exitCode != 0;
+    my @cmd = (
+        'nice', 'rms',
+        '-r' ,$resolution,
+        '-i', $audioFile,
+        '-o', $rmsFile);
+    push @cmd, '-v' if defined $verbose;
+    execute @cmd;
 }
 
 sub buildDataFile {
-    my $rmsFile  = shift;
-    my $dataFile = shift;
+    my ($rmsFile, $dataFile) = @_;
 
     unlink $dataFile if -e $dataFile;
 
@@ -158,13 +153,11 @@ sub plot {
         close $file;
     }
 
-    my $command = "gnuplot '$plotFile'";
-    $command = "gnuplot '$template'" if defined $template;
+    my @cmd = ("gnuplot", $plotFile);
+    @cmd = ("gnuplot", $template) if defined $template;
 
-    print STDERR "execute $command\n";
-    print STDERR `$command 2>&1`;
+    execute @cmd;
     my $exitCode = $? >> 8;
-    print STDERR "rmsPlot='$imageFile'\n";
     error("plot command died with error $exitCode: $!") if $exitCode != 0;
 }
 
@@ -199,13 +192,40 @@ plotRms -i audio.mp3 -o audio.svg
 };
 }
 
-sub error {
-    print "ERROR: " . $_[0] . "\n";
-    exit 1;
+Getopt::Long::GetOptions(
+    "i|input=s"      => \$audioFile,
+    "o|output=s"     => \$imageFile,
+    "r|resolution=s" => \$resolution,
+    "t|template=s"   => \$template,
+    "l|limit=i"      => \$minRms,
+    "h|help"         => \$help,
+    "v|verbose"      => \$verbose
+) or error("Error in command line arguments\n");
+
+if ($help) {
+    usage();
+    exit();
 }
+error("missing parameter --input for audio file") unless defined $audioFile;
+error("audio file '$audioFile' does not exist")   unless -e $audioFile;
+error("template file '$template' does not exist") if ( defined $template ) && ( !-e $template );
+error("invalid resolution '$resolution'")         if $resolution <= 0;
+
+$imageFile   = dirname($audioFile) . '/' . basename($audioFile) . '.png' unless defined $imageFile;
+my $tmp      = basename($audioFile) =~ s/[^a-z0-9A-Z]/_/gr;
+my $dataFile = qq{$tempDir/$tmp-plot.data};
+my $rmsFile  = qq{$tempDir/$tmp-plot.rms};
+my $plotFile = qq{$tempDir/$tmp.plot'};
 
 END {
-    unlink $dataFile if ( defined $dataFile ) && ( -e $dataFile );
-    unlink $rmsFile  if ( defined $rmsFile )  && ( -e $rmsFile );
-    unlink $plotFile if ( defined $plotFile ) && ( -e $plotFile );
+    unlink $dataFile if defined $dataFile  and -e $dataFile;
+    unlink $rmsFile  if defined $rmsFile   and -e $rmsFile;
+    unlink $plotFile if defined $plotFile  and -e $plotFile;
 }
+
+# use the positive value internally
+$minRms *= -1 if $minRms < 0;
+
+getData( $audioFile, $rmsFile );
+buildDataFile( $rmsFile, $dataFile );
+plot( $dataFile, $plotFile );
