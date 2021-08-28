@@ -1,3 +1,15 @@
+rms (0.03.02~bionic) bionic; urgency=low
+  * bin/plotRms: allow single quote in input filename
+ -- Milan Chrobok <mc@radiopiloten.de>  Mon, 23 Aug 2021 22:22:09 +0200
+
+rms (0.03.01~focal) focal; urgency=low
+  * bin/plotRms: allow single quote in input filename
+ -- Milan Chrobok <mc@radiopiloten.de>  Mon, 23 Aug 2021 22:22:09 +0200
+
+rms (0.03~hirsute) hirsute; urgency=low
+  * bin/plotRms: allow single quote in input filename
+ -- Milan Chrobok <mc@radiopiloten.de>  Mon, 23 Aug 2021 22:22:09 +0200
+
 rms (0.02~hirsute) hirsute; urgency=low
   * debian/source/options: exclude repo
   * bin/pulseRms: make executable
