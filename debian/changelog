@@ -1,3 +1,14 @@
+rms (0.04~jammy) jammy; urgency=low
+  * bin/plot-log: build a SVG plot from a audio log file
+    (peak and RMS in dB)
+ -- Milan Chrobok <mc@radiopiloten.de>  Sun, 05 Mar 2023 22:22:09 +0200
+
+rms (0.03.02~jammy) jammy; urgency=low
+ -- Milan Chrobok <mc@radiopiloten.de>  Mon, 23 Aug 2021 22:22:09 +0200
+
+rms (0.03.02~focal) focal; urgency=low
+ -- Milan Chrobok <mc@radiopiloten.de>  Mon, 23 Aug 2021 22:22:09 +0200
+
 rms (0.03.02~bionic) bionic; urgency=low
   * bin/plotRms: allow single quote in input filename
  -- Milan Chrobok <mc@radiopiloten.de>  Mon, 23 Aug 2021 22:22:09 +0200

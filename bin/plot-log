@@ -1,0 +1,220 @@
+#!/usr/bin/perl
+
+# Usage: plot-log <logfile>
+# This tool takes a log file containing audio data entries in the format of
+# "yyyy-mm-dd <SP> hh:mm:ss <TAB> rmsL <TAB> rmsR <TAB> peakL <TAB> peakR <NL>"
+# and plots a waveform SVG of today's audio data. The input values for RMS and
+# Peak are in dB. The output shows only the range from -36dB to 0dB.
+
+# The tool works by parsing the log file to extract the audio data entries of
+# today's date, calculating the waveform from the RMS and peak values, and then
+# generating an SVG file using the specified options. The resulting SVG file can
+# be viewed in any web browser or integrated into other applications for further
+# analysis.
+
+use warnings;
+use strict;
+use File::Basename();
+use File::Copy();
+
+my $minRms = -36;
+$minRms *= -1 if $minRms < 0;
+
+sub timeToDatetime {
+    my ($time) = @_;
+
+    $time = time() unless (defined $time) && ($time ne '');
+    (my $sec, my $min, my $hour, my $day, my $month, my $year)
+        = localtime($time);
+    return sprintf(
+        "%4d-%02d-%02d %02d:%02d:%02d",
+        $year + 1900,
+        $month + 1, $day, $hour, $min, $sec
+    );
+}
+
+sub timeToDate {
+    my ($time) = @_;
+
+    $time = time() unless (defined $time) && ($time ne '');
+    (my $sec, my $min, my $hour, my $day, my $month, my $year)
+        = localtime($time);
+    return sprintf("%4d-%02d-%02d", $year + 1900, $month + 1, $day);
+}
+
+sub getUserId {
+    my ($userName) = @_;
+    my $userId = getpwnam($userName);
+    return $userId;
+}
+
+sub getGroupId($) {
+    my ($groupName) = @_;
+    my $groupId = getgrnam($groupName);
+    return $groupId;
+}
+
+sub setFilePermissions($) {
+    my ($path)  = @_;
+    my $userId  = getUserId('audiostream');
+    my $groupId = getGroupId('www-data');
+    return unless defined $userId;
+    return unless defined $groupId;
+    chown($userId, $groupId, $path);
+}
+
+sub buildDataFile($$) {
+    my ($rmsFile, $dataFile) = @_;
+
+    unlink $dataFile if -e $dataFile;
+    open my $file, "< ", $rmsFile or die "cannot read from $rmsFile";
+
+    my $content = '';
+    while (<$file>) {
+        my $line = $_;
+        $line =~ s/\n//g;
+        my @vals = split(/\t/, $line);
+        if ($line =~ /^#/) {
+            $content .= $line . "\n";
+            next;
+        }
+        next if scalar(@vals) < 5;
+
+        for my $i (1 .. scalar(@vals) - 1) {
+            my $val = $vals[$i];
+
+            # silence detection
+            if ($val <= -100) {
+                $vals[$i] = '-';
+                next;
+            }
+
+            # cut off signal lower than minRMS
+            $val = -$minRms if $val < -$minRms;
+
+            # get absolute value
+            $val = abs($val);
+
+            # inverse value for plot (minRMS-val= plotVal)
+            $val = $minRms - $val;
+            $vals[$i] = $val;
+        }
+        $content .= join("\t ", @vals) . "\n";
+    }
+    close $file;
+
+    open my $outFile, "> ", $dataFile or die "cannot write to $dataFile";
+    print $outFile $content;
+    close $outFile;
+}
+
+sub plot {
+    my ($filename) = @_;
+    my $date = timeToDate();
+
+    my $plotDir = File::Basename::dirname($filename);
+    return unless -e $plotDir;
+    return unless -d $plotDir;
+
+    chomp(my $gnuplot = qx{which gnuplot});
+    return unless -e $gnuplot;
+
+    die "skip plot, $filename does not exist" unless -e $filename;
+
+    my $dataFile = '/tmp/' . File::Basename::basename($filename) . '.plot';
+    buildDataFile($filename, $dataFile);
+
+    $filename = $dataFile;
+    die "skip plot, $filename does not exist" unless -e $filename;
+
+    my @ytics = ();
+    for (my $i = 0; $i <= $minRms; $i += 8) {
+        unshift @ytics, '"-' . ($minRms - abs(-$i)) . '" ' . (-$i);
+        push @ytics, '"-' . ($minRms - abs($i)) . '" ' . ($i);
+    }
+    my $ytics = join(", ", @ytics);
+
+    my $plot = qq{
+set terminal svg size 2000,600 linewidth 1 background rgb 'black'
+set multiplot layout 3, 1
+set xdata time
+set timefmt "%Y-%m-%d %H:%M:%S"
+set datafile separator "\t"
+set format x "%H-%M"
+
+set border lc rgb '#f0f0f0f0'
+set style fill transparent solid 0.3
+set style data lines
+
+unset border
+set grid
+set tmargin 1
+set bmargin 1
+set lmargin 10
+set rmargin 3
+
+set xrange ["} . $date . q{ 00:00:00Z":"} . $date . qq{ 23:59:59Z"]
+
+} . qq{
+set ylabel "input in dB" tc rgb "#f0f0f0"
+set ytics ($ytics)
+set yrange [-$minRms:$minRms]
+
+plot \\
+$minRms-20  notitle lc rgb "#50999999", \\
+-$minRms+20 notitle lc rgb "#50999999", \\
+$minRms-1   notitle lc rgb "#50999999", \\
+-$minRms+1  notitle lc rgb "#50999999", \\
+"}
+        . $filename
+        . q{" using 1:( $4) notitle lc rgb "#50eecccc" w filledcurves y1=0, \
+"}
+        . $filename
+        . q{" using 1:(-$5) notitle lc rgb "#50cceecc" w filledcurves y1=0, \
+"}
+        . $filename
+        . q{" using 1:( $2) notitle lc rgb "#50ff0000" w filledcurves y1=0, \
+"}
+        . $filename
+        . q{" using 1:(-$3) notitle lc rgb "#5000ff00" w filledcurves y1=0
+
+};
+    my $plotFile = "/tmp/monitor.plot";
+    open my $file, '>', $plotFile;
+    print $file $plot;
+    close $file;
+
+    my $tempImageFile = "/tmp/monitor.svg";
+    my $imageFile     = "$plotDir/audio-$date.svg";
+    my $command       = "$gnuplot '$plotFile' > '$tempImageFile'";
+    `$command`;
+    my $exitCode = $? >> 8;
+    if ($exitCode != 0) {
+        die("plot finished with $exitCode");
+    } else {
+        File::Copy::copy($tempImageFile, $imageFile);
+    }
+    setFilePermissions($imageFile);
+}
+
+die unless @ARGV;
+plot(@ARGV);
+
+__DATA__
+A generator script for liquidsoap 2.0
+
+stream = input.http("http://localhost/audio-stream.m3u")
+r1 = rms.stereo(duration=10., stream)
+output.dummy(r1)
+p1 = peak.stereo(duration=10., stream)
+output.dummy(p1)
+def save_metrics()
+    datetime = string.trim(process.read("date '+%Y-%m-%d %H:%M:%S'"))
+    date = string.trim(process.read("date '+%Y-%m-%d'"))
+    file.write(
+        append=true,
+        data="#{datetime}\t#{dB_of_lin(fst(r1.rms()))}\t#{dB_of_lin(snd(r1.rms()))}\t#{dB_of_lin(fst(p1.peak()))}\t#{dB_of_lin(snd(p1.peak()))}\n",
+        "/media/plot/#{date}.log"
+    )
+end
+thread.run(every=10., save_metrics)
