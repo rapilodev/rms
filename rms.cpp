@@ -8,6 +8,7 @@ using namespace std;
 
 #ifdef __cplusplus
 extern "C" {
+#include <libavcodec/version.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 }
@@ -326,7 +327,6 @@ void printLine(Stats *step, double seconds) {
 }
 
 void readAudioRms(const char* filename) {
-	av_register_all();
 
 	Stats* step = new Stats();
 	Stats* total = new Stats();
@@ -348,7 +348,11 @@ void readAudioRms(const char* filename) {
 	if (avformat_find_stream_info(formatContext, NULL) < 0)
 		error("cannot find stream information");
 
+#if LIBAVCODEC_VERSION_MAJOR <= 58
 	AVCodec *codec = NULL;
+#else
+	const AVCodec *codec = NULL;
+#endif
 
 	// get stream id
 	int audioStreamId = av_find_best_stream(formatContext, AVMEDIA_TYPE_AUDIO,
